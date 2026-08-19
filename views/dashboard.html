@@ -33,7 +33,10 @@
 
     <div style="display:flex; justify-content:space-between; align-items:center; margin: 20px 0; gap: 16px; flex-wrap: wrap;">
       <h2 style="margin: 0;">Create New QR Code</h2>
-      <button type="button" class="btn" style="background:#e53e3e;" onclick="window.location.href='/logout'">Logout</button>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button type="button" class="btn" onclick="window.location.href='/'">Home</button>
+        <button type="button" class="btn" style="background:#e53e3e;" onclick="window.location.href='/logout'">Logout</button>
+      </div>
     </div>
 
     <form id="qrForm" style="background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.05); margin-bottom:30px;">
@@ -80,6 +83,9 @@
       </div>
     </div>
 
+    <h2>Generated QR Codes</h2>
+    <div id="qrGallery" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:20px; margin-bottom:30px;"></div>
+
     <h2>Recent Scan Activity</h2>
     <table>
       <thead>
@@ -97,7 +103,141 @@
     </table>
   </div>
 
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
   <script>
+    const qrGallery = document.getElementById('qrGallery');
+
+    function renderQrGallery(qrs) {
+      if (!qrGallery) return;
+
+      if (!qrs || qrs.length === 0) {
+        qrGallery.innerHTML = '<div style="background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">No QR codes created yet.</div>';
+        return;
+      }
+
+      qrGallery.innerHTML = '';
+
+      qrs.forEach((qr) => {
+        const card = document.createElement('div');
+        card.style.background = '#fff';
+        card.style.padding = '16px';
+        card.style.borderRadius = '8px';
+        card.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
+        card.style.textAlign = 'center';
+
+        const trackingUrl = `${location.origin}/scan/${qr.codeId}`;
+        const img = document.createElement('img');
+        img.alt = qr.productName;
+        img.style.width = '180px';
+        img.style.height = '180px';
+        img.style.display = 'block';
+        img.style.margin = '0 auto 12px auto';
+        img.style.border = '1px solid #edf2f7';
+        img.style.padding = '8px';
+        img.style.borderRadius = '8px';
+
+        if (window.QRCode) {
+          QRCode.toDataURL(trackingUrl, { width: 180 }, function (err, url) {
+            if (!err) img.src = url;
+          });
+        }
+
+        const title = document.createElement('div');
+        title.textContent = qr.productName;
+        title.style.fontWeight = '700';
+        title.style.marginBottom = '8px';
+
+        const idLabel = document.createElement('div');
+        idLabel.textContent = `ID: ${qr.codeId}`;
+        idLabel.style.fontSize = '12px';
+        idLabel.style.color = '#4a5568';
+        idLabel.style.marginBottom = '8px';
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.gap = '8px';
+        actions.style.justifyContent = 'center';
+        actions.style.flexWrap = 'wrap';
+        actions.style.marginTop = '12px';
+
+        const previewBtn = document.createElement('button');
+        previewBtn.type = 'button';
+        previewBtn.textContent = 'Preview QR';
+        previewBtn.style.padding = '8px 12px';
+        previewBtn.style.background = '#2d3748';
+        previewBtn.style.color = '#fff';
+        previewBtn.style.border = 'none';
+        previewBtn.style.borderRadius = '6px';
+        previewBtn.style.cursor = 'pointer';
+        previewBtn.onclick = () => {
+          const previewWindow = window.open('', '_blank', 'width=420,height=420');
+          previewWindow.document.write(`
+            <html>
+              <body style="font-family:sans-serif; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px; padding:20px; text-align:center;">
+                <h3>${qr.productName}</h3>
+                <img src="${img.src || ''}" alt="${qr.productName}" style="width:260px; height:260px; border:1px solid #ddd; padding:10px; border-radius:8px;" />
+                <div>Tracking URL: ${trackingUrl}</div>
+              </body>
+            </html>
+          `);
+        };
+
+        const downloadBtn = document.createElement('a');
+        downloadBtn.href = img.src || trackingUrl;
+        downloadBtn.download = `${qr.codeId}.png`;
+        downloadBtn.textContent = 'Download QR';
+        downloadBtn.style.padding = '8px 12px';
+        downloadBtn.style.background = '#3182ce';
+        downloadBtn.style.color = '#fff';
+        downloadBtn.style.borderRadius = '6px';
+        downloadBtn.style.textDecoration = 'none';
+        downloadBtn.style.display = 'inline-block';
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.textContent = 'Delete QR';
+        deleteBtn.style.padding = '8px 12px';
+        deleteBtn.style.background = '#e53e3e';
+        deleteBtn.style.color = '#fff';
+        deleteBtn.style.border = 'none';
+        deleteBtn.style.borderRadius = '6px';
+        deleteBtn.style.cursor = 'pointer';
+        deleteBtn.onclick = async () => {
+          if (!confirm(`Delete QR code: ${qr.codeId}?`)) return;
+
+          try {
+            const response = await fetch(`/delete/${qr.codeId}`, { method: 'DELETE' });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Delete failed');
+            fetchAnalytics();
+          } catch (error) {
+            alert(error.message);
+          }
+        };
+
+        const openLink = document.createElement('a');
+        openLink.href = trackingUrl;
+        openLink.target = '_blank';
+        openLink.rel = 'noopener';
+        openLink.textContent = 'Open link';
+        openLink.style.display = 'inline-block';
+        openLink.style.marginTop = '10px';
+        openLink.style.color = '#3182ce';
+        openLink.style.textDecoration = 'none';
+
+        card.appendChild(title);
+        card.appendChild(idLabel);
+        card.appendChild(img);
+        actions.appendChild(previewBtn);
+        actions.appendChild(downloadBtn);
+        actions.appendChild(deleteBtn);
+        card.appendChild(actions);
+        card.appendChild(openLink);
+
+        qrGallery.appendChild(card);
+      });
+    }
+
     async function fetchAnalytics() {
       try {
         const res = await fetch('/api/analytics');
@@ -107,6 +247,7 @@
         document.getElementById('totalQrs').innerText = data.summary.totalQrs;
         document.getElementById('totalScans').innerText = data.summary.totalScans;
         document.getElementById('suspiciousScans').innerText = data.summary.suspiciousScans;
+        renderQrGallery(data.qrs || []);
 
         const tableBody = document.getElementById('logsTable');
         tableBody.innerHTML = '';
@@ -143,6 +284,7 @@
 
       try {
         createStatus.textContent = 'Creating QR code...';
+        createStatus.style.color = '#2d3748';
         const response = await fetch('/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

@@ -36,6 +36,68 @@ const normalizeAllowedCountries = (value) => {
 // PUBLIC ROUTES
 // ==========================================
 
+router.get('/', (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>QR Tracker</title>
+      <style>
+        body {
+          margin: 0;
+          font-family: Arial, sans-serif;
+          background: linear-gradient(135deg, #edf6ff, #f8fafc);
+          color: #1a202c;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 100vh;
+        }
+        .card {
+          background: #fff;
+          border-radius: 16px;
+          padding: 40px 30px;
+          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+          text-align: center;
+          max-width: 540px;
+          width: 90%;
+        }
+        h1 {
+          margin-bottom: 12px;
+        }
+        p {
+          margin-bottom: 24px;
+          color: #4a5568;
+        }
+        .btn {
+          display: inline-block;
+          margin: 8px;
+          padding: 12px 20px;
+          border-radius: 10px;
+          background: #3182ce;
+          color: white;
+          text-decoration: none;
+          font-weight: 600;
+        }
+        .btn.secondary {
+          background: #2d3748;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <h1>QR Tracker</h1>
+        <p>Track scans, validate product authenticity, and review QR activity securely.</p>
+        <a class="btn" href="/admin">Open Admin Dashboard</a>
+        <a class="btn secondary" href="/scan/demo">View Demo Scan</a>
+      </div>
+    </body>
+    </html>
+  `);
+});
+
 // 1. SCAN & REDIRECT HANDLER
 router.get('/scan/:codeId', async (req, res) => {
   try {
@@ -113,11 +175,17 @@ router.get('/scan/:codeId', async (req, res) => {
 // 2. CREATE A NEW TRACKABLE QR CODE
 router.post('/create', adminAuth, async (req, res) => {
   try {
-    const { codeId, productName, destinationUrl, maxScanThreshold, allowedCountries } = req.body;
+    const body = req.body || {};
+    const { codeId, productName, destinationUrl, maxScanThreshold, allowedCountries } = body;
 
     if (!codeId || !productName || !destinationUrl) {
-      return res.status(400).json({ error: 'codeId, productName, and destinationUrl are required.' });
+      return res.status(400).json({
+        error: 'codeId, productName, and destinationUrl are required.',
+        receivedBody: body
+      });
     }
+
+    const baseUrl = (process.env.BASE_URL || req.protocol + '://' + req.get('host')).replace(/\/$/, '');
 
     const newQr = await QrCode.create({
       codeId: String(codeId).trim(),
@@ -127,7 +195,7 @@ router.post('/create', adminAuth, async (req, res) => {
       allowedCountries: normalizeAllowedCountries(allowedCountries)
     });
 
-    const trackingUrl = `${process.env.BASE_URL}/scan/${codeId}`;
+    const trackingUrl = baseUrl + '/scan/' + String(codeId).trim();
     const qrImageBuffer = await QRCodeGenerator.toDataURL(trackingUrl);
 
     res.status(201).json({
@@ -140,7 +208,6 @@ router.post('/create', adminAuth, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
 router.get('/logout', (req, res) => {
   res.set('WWW-Authenticate', 'Basic realm="Admin Area"');
   return res.status(401).send('<h1>Logged out</h1><p>Credentials cleared. Please sign in again.</p>');
@@ -201,6 +268,23 @@ router.put('/update/:codeId', adminAuth, async (req, res) => {
       { new: true }
     );
     res.json({ message: 'QR Code updated successfully', data: updated });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 7. DELETE QR CODE
+router.delete('/delete/:codeId', adminAuth, async (req, res) => {
+  try {
+    const deleted = await QrCode.findOneAndDelete({ codeId: req.params.codeId });
+
+    if (!deleted) {
+      return res.status(404).json({ error: 'QR code not found' });
+    }
+
+    await ScanLog.deleteMany({ qrCodeId: req.params.codeId });
+
+    res.json({ message: 'QR code deleted successfully', data: deleted });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
