@@ -88,7 +88,7 @@ router.get('/', (req, res) => {
     </head>
     <body>
       <div class="card">
-        <h1>QR Tracker</h1>
+        <h1>QR Tracker New</h1>
         <p>Track scans, validate product authenticity, and review QR activity securely.</p>
         <a class="btn" href="/admin">Open Admin Dashboard</a>
         <a class="btn secondary" href="/scan/demo">View Demo Scan</a>
