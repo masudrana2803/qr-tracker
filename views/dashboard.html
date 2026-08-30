@@ -136,7 +136,10 @@
         img.style.padding = '8px';
         img.style.borderRadius = '8px';
 
-        if (window.QRCode) {
+        const savedQrData = qr.qrImageBase64 ? `data:image/png;base64,${qr.qrImageBase64}` : '';
+        if (savedQrData) {
+          img.src = savedQrData;
+        } else if (window.QRCode) {
           QRCode.toDataURL(trackingUrl, { width: 180 }, function (err, url) {
             if (!err) img.src = url;
           });

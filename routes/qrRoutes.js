@@ -102,10 +102,25 @@ router.get('/', (req, res) => {
 router.get('/scan/:codeId', async (req, res) => {
   try {
     const { codeId } = req.params;
-    const qrRecord = await QrCode.findOne({ codeId });
+    const qrRecord = await QrCode.findOne({ codeId }).sort({ createdAt: -1 });
 
     if (!qrRecord) {
       return res.status(404).send('<h1>Invalid or Unrecognized QR Code</h1>');
+    }
+
+    if (!qrRecord.destinationUrl) {
+      return res.status(404).send('<h1>QR destination is missing</h1>');
+    }
+
+    let destinationUrl = qrRecord.destinationUrl.trim();
+    try {
+      const parsed = new URL(destinationUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error('Invalid protocol');
+      }
+      destinationUrl = parsed.toString();
+    } catch (error) {
+      return res.status(400).send('<h1>Invalid QR destination URL configured</h1>');
     }
 
     // Extract IP Address
@@ -160,7 +175,7 @@ router.get('/scan/:codeId', async (req, res) => {
 
     // Record legitimate scan and redirect
     await ScanLog.create({ qrCodeId: codeId, ipAddress: clientIp, country, city, status: scanStatus });
-    return res.redirect(qrRecord.destinationUrl);
+    return res.redirect(302, destinationUrl);
 
   } catch (error) {
     res.status(500).send('Server Error Processing Scan');
@@ -198,11 +213,17 @@ router.post('/create', adminAuth, async (req, res) => {
     const trackingUrl = baseUrl + '/scan/' + String(codeId).trim();
     const qrImageBuffer = await QRCodeGenerator.toDataURL(trackingUrl);
 
+    const savedQr = await QrCode.findByIdAndUpdate(
+      newQr._id,
+      { qrImageBase64: qrImageBuffer.replace(/^data:image\/png;base64,/, '') },
+      { new: true }
+    );
+
     res.status(201).json({
       message: 'QR Code created successfully',
       trackingUrl,
       qrImageBase64: qrImageBuffer,
-      data: newQr
+      data: savedQr
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -262,9 +283,23 @@ router.get('/api/export-csv', adminAuth, async (req, res) => {
 router.put('/update/:codeId', adminAuth, async (req, res) => {
   try {
     const { destinationUrl, maxScanThreshold, allowedCountries } = req.body;
+
+    if (!destinationUrl) {
+      return res.status(400).json({ error: 'destinationUrl is required' });
+    }
+
+    try {
+      const parsed = new URL(destinationUrl.trim());
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error('Invalid protocol');
+      }
+    } catch (error) {
+      return res.status(400).json({ error: 'Invalid destinationUrl format.' });
+    }
+
     const updated = await QrCode.findOneAndUpdate(
       { codeId: req.params.codeId },
-      { destinationUrl, maxScanThreshold, allowedCountries },
+      { destinationUrl: destinationUrl.trim(), maxScanThreshold, allowedCountries },
       { new: true }
     );
     res.json({ message: 'QR Code updated successfully', data: updated });
