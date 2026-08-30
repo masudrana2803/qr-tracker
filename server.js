@@ -10,10 +10,14 @@ app.use(express.urlencoded({ extended: true }));
 
 const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/qrtracker';
 
-// Connect to MongoDB
+// Connect to MongoDB. Use the local default for this workspace so the app works without Atlas access.
 mongoose.connect(mongoUri)
   .then(() => console.log('MongoDB Connected Successfully'))
-  .catch((err) => console.error('MongoDB Connection Error:', err));
+  .catch((err) => {
+    console.error('MongoDB Connection Error:', err.message);
+    console.error('Configured MongoDB URI:', mongoUri);
+    console.error('Make sure MongoDB is running locally or update MONGODB_URI in .env');
+  });
 
 // Register Routes
 app.use('/', qrRoutes);
