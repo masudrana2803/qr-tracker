@@ -1,6 +1,5 @@
 const express = require('express');
 const router = express.Router();
-const path = require('path');
 const axios = require('axios');
 const QRCodeGenerator = require('qrcode');
 const basicAuth = require('express-basic-auth');
@@ -14,7 +13,7 @@ const adminAuth = basicAuth({
     [process.env.ADMIN_USER || 'admin']: process.env.ADMIN_PASS || 'admin123' 
   },
   challenge: true,
-  unauthorizedResponse: '<h1>401 Unauthorized - Access Denied</h1>'
+  unauthorizedResponse: JSON.stringify({ error: 'Unauthorized' })
 });
 
 const normalizeAllowedCountries = (value) => {
@@ -33,162 +32,38 @@ const normalizeAllowedCountries = (value) => {
 };
 
 // ==========================================
-// PUBLIC ROUTES
+// API INFO
 // ==========================================
 
 router.get('/', (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>QR Tracker</title>
-      <style>
-        body {
-          margin: 0;
-          font-family: Arial, sans-serif;
-          background: linear-gradient(135deg, #edf6ff, #f8fafc);
-          color: #1a202c;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          min-height: 100vh;
-        }
-        .card {
-          background: #fff;
-          border-radius: 16px;
-          padding: 40px 30px;
-          box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
-          text-align: center;
-          max-width: 540px;
-          width: 90%;
-        }
-        h1 {
-          margin-bottom: 12px;
-        }
-        p {
-          margin-bottom: 24px;
-          color: #4a5568;
-        }
-        .btn {
-          display: inline-block;
-          margin: 8px;
-          padding: 12px 20px;
-          border-radius: 10px;
-          background: #3182ce;
-          color: white;
-          text-decoration: none;
-          font-weight: 600;
-        }
-        .btn.secondary {
-          background: #2d3748;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="card">
-        <h1>QR Tracker New</h1>
-        <p>Track scans, validate product authenticity, and review QR activity securely.</p>
-        <a class="btn" href="/admin">Open Admin Dashboard</a>
-        <a class="btn secondary" href="/scan/demo">View Demo Scan</a>
-      </div>
-    </body>
-    </html>
-  `);
+  res.json({
+    name: 'QR Tracker API',
+    status: 'ok',
+    version: '1.0.0',
+    endpoints: {
+      create: 'POST /api/qrcodes',
+      scan: 'POST /api/qrcodes/:codeId/scan',
+      list: 'GET /api/qrcodes',
+      update: 'PUT /api/qrcodes/:codeId',
+      delete: 'DELETE /api/qrcodes/:codeId',
+      analytics: 'GET /api/analytics',
+      exportCsv: 'GET /api/export-csv'
+    }
+  });
 });
 
-// 1. SCAN & REDIRECT HANDLER
-router.get('/scan/:codeId', async (req, res) => {
+// 1. LIST QR CODES
+router.get('/qrcodes', adminAuth, async (req, res) => {
   try {
-    const { codeId } = req.params;
-    const qrRecord = await QrCode.findOne({ codeId }).sort({ createdAt: -1 });
-
-    if (!qrRecord) {
-      return res.status(404).send('<h1>Invalid or Unrecognized QR Code</h1>');
-    }
-
-    if (!qrRecord.destinationUrl) {
-      return res.status(404).send('<h1>QR destination is missing</h1>');
-    }
-
-    let destinationUrl = qrRecord.destinationUrl.trim();
-    try {
-      const parsed = new URL(destinationUrl);
-      if (!['http:', 'https:'].includes(parsed.protocol)) {
-        throw new Error('Invalid protocol');
-      }
-      destinationUrl = parsed.toString();
-    } catch (error) {
-      return res.status(400).send('<h1>Invalid QR destination URL configured</h1>');
-    }
-
-    // Extract IP Address
-    let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    if (clientIp === '::1' || clientIp === '127.0.0.1') {
-      clientIp = '8.8.8.8'; // Fallback Google DNS IP for local testing
-    }
-
-    // Free GeoIP Lookup
-    let country = 'UNKNOWN';
-    let city = 'UNKNOWN';
-    try {
-      const geoResponse = await axios.get(`https://ipapi.co/${clientIp}/json/`);
-      country = geoResponse.data.country_code || 'UNKNOWN';
-      city = geoResponse.data.city || 'UNKNOWN';
-    } catch (err) {
-      console.error('GeoIP lookup error:', err.message);
-    }
-
-    // Increment scan count
-    qrRecord.totalScans += 1;
-    await qrRecord.save();
-
-    let scanStatus = 'VALID';
-
-    // CHECK 1: Exceeded Threshold
-    if (qrRecord.totalScans > qrRecord.maxScanThreshold) {
-      scanStatus = 'THRESHOLD_EXCEEDED';
-      await ScanLog.create({ qrCodeId: codeId, ipAddress: clientIp, country, city, status: scanStatus });
-      
-      return res.status(403).send(`
-        <div style="text-align:center; padding:50px; font-family:sans-serif;">
-          <h1 style="color:red;">Security Warning</h1>
-          <p>This product code has been scanned <b>${qrRecord.totalScans} times</b> (Maximum limit: ${qrRecord.maxScanThreshold}).</p>
-          <p>This item may be duplicated or counterfeit.</p>
-        </div>
-      `);
-    }
-
-    // CHECK 2: Geofence Country Match
-    if (qrRecord.allowedCountries.length > 0 && !qrRecord.allowedCountries.includes(country)) {
-      scanStatus = 'GEO_MISMATCH';
-      await ScanLog.create({ qrCodeId: codeId, ipAddress: clientIp, country, city, status: scanStatus });
-
-      return res.status(403).send(`
-        <div style="text-align:center; padding:50px; font-family:sans-serif;">
-          <h1 style="color:red;">Cross-Country / Counterfeit Alert</h1>
-          <p>This product is not authorized for scan or distribution in your region (<b>${country}</b>).</p>
-        </div>
-      `);
-    }
-
-    // Record legitimate scan and redirect
-    await ScanLog.create({ qrCodeId: codeId, ipAddress: clientIp, country, city, status: scanStatus });
-    return res.redirect(302, destinationUrl);
-
+    const qrs = await QrCode.find().sort({ createdAt: -1 });
+    res.json({ data: qrs });
   } catch (error) {
-    res.status(500).send('Server Error Processing Scan');
+    res.status(500).json({ error: error.message });
   }
 });
 
-
-// ==========================================
-// PROTECTED ADMIN ROUTES
-// ==========================================
-
 // 2. CREATE A NEW TRACKABLE QR CODE
-router.post('/create', adminAuth, async (req, res) => {
+router.post('/qrcodes', adminAuth, async (req, res) => {
   try {
     const body = req.body || {};
     const { codeId, productName, destinationUrl, maxScanThreshold, allowedCountries } = body;
@@ -210,7 +85,7 @@ router.post('/create', adminAuth, async (req, res) => {
       allowedCountries: normalizeAllowedCountries(allowedCountries)
     });
 
-    const trackingUrl = baseUrl + '/scan/' + String(codeId).trim();
+    const trackingUrl = baseUrl + '/api/qrcodes/' + String(codeId).trim() + '/scan';
     const qrImageBuffer = await QRCodeGenerator.toDataURL(trackingUrl);
 
     const savedQr = await QrCode.findByIdAndUpdate(
@@ -220,7 +95,7 @@ router.post('/create', adminAuth, async (req, res) => {
     );
 
     res.status(201).json({
-      message: 'QR Code created successfully',
+      message: 'QR code created successfully',
       trackingUrl,
       qrImageBase64: qrImageBuffer,
       data: savedQr
@@ -229,18 +104,93 @@ router.post('/create', adminAuth, async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-router.get('/logout', (req, res) => {
-  res.set('WWW-Authenticate', 'Basic realm="Admin Area"');
-  return res.status(401).send('<h1>Logged out</h1><p>Credentials cleared. Please sign in again.</p>');
-});
 
-// 3. SERVE ADMIN DASHBOARD UI
-router.get('/admin', adminAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, '../views/dashboard.html'));
+// 3. SCAN HANDLER (REST-ONLY: JSON response, no redirect)
+router.post('/qrcodes/:codeId/scan', async (req, res) => {
+  try {
+    const { codeId } = req.params;
+    const qrRecord = await QrCode.findOne({ codeId }).sort({ createdAt: -1 });
+
+    if (!qrRecord) {
+      return res.status(404).json({ error: 'Invalid or unrecognized QR code.' });
+    }
+
+    if (!qrRecord.destinationUrl) {
+      return res.status(404).json({ error: 'QR destination is missing.' });
+    }
+
+    let destinationUrl = qrRecord.destinationUrl.trim();
+    try {
+      const parsed = new URL(destinationUrl);
+      if (!['http:', 'https:'].includes(parsed.protocol)) {
+        throw new Error('Invalid protocol');
+      }
+      destinationUrl = parsed.toString();
+    } catch (error) {
+      return res.status(400).json({ error: 'Invalid QR destination URL configured.' });
+    }
+
+    // Extract IP Address
+    let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    if (clientIp === '::1' || clientIp === '127.0.0.1') {
+      clientIp = '8.8.8.8';
+    }
+
+    // Free GeoIP Lookup
+    let country = 'UNKNOWN';
+    let city = 'UNKNOWN';
+    try {
+      const geoResponse = await axios.get(`https://ipapi.co/${clientIp}/json/`);
+      country = geoResponse.data.country_code || 'UNKNOWN';
+      city = geoResponse.data.city || 'UNKNOWN';
+    } catch (err) {
+      console.error('GeoIP lookup error:', err.message);
+    }
+
+    qrRecord.totalScans += 1;
+    await qrRecord.save();
+
+    let scanStatus = 'VALID';
+
+    if (qrRecord.totalScans > qrRecord.maxScanThreshold) {
+      scanStatus = 'THRESHOLD_EXCEEDED';
+      await ScanLog.create({ qrCodeId: codeId, ipAddress: clientIp, country, city, status: scanStatus });
+      return res.status(403).json({
+        status: 'THRESHOLD_EXCEEDED',
+        message: 'Security warning: this QR code has exceeded its allowed scan limit.',
+        totalScans: qrRecord.totalScans,
+        maxScanThreshold: qrRecord.maxScanThreshold
+      });
+    }
+
+    if (qrRecord.allowedCountries.length > 0 && !qrRecord.allowedCountries.includes(country)) {
+      scanStatus = 'GEO_MISMATCH';
+      await ScanLog.create({ qrCodeId: codeId, ipAddress: clientIp, country, city, status: scanStatus });
+      return res.status(403).json({
+        status: 'GEO_MISMATCH',
+        message: 'Cross-country or counterfeit alert: this QR code is not authorized for this region.',
+        country,
+        allowedCountries: qrRecord.allowedCountries
+      });
+    }
+
+    await ScanLog.create({ qrCodeId: codeId, ipAddress: clientIp, country, city, status: scanStatus });
+    return res.status(200).json({
+      status: 'VALID',
+      message: 'Scan validated successfully.',
+      qrCodeId: codeId,
+      destinationUrl,
+      country,
+      city,
+      totalScans: qrRecord.totalScans
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Server error processing scan.' });
+  }
 });
 
 // 4. ANALYTICS JSON API
-router.get('/api/analytics', adminAuth, async (req, res) => {
+router.get('/analytics', adminAuth, async (req, res) => {
   try {
     const totalQrs = await QrCode.countDocuments();
     const totalScans = await ScanLog.countDocuments();
@@ -262,7 +212,7 @@ router.get('/api/analytics', adminAuth, async (req, res) => {
 });
 
 // 5. EXPORT LOGS TO CSV
-router.get('/api/export-csv', adminAuth, async (req, res) => {
+router.get('/export-csv', adminAuth, async (req, res) => {
   try {
     const logs = await ScanLog.find().sort({ scannedAt: -1 });
 
@@ -280,7 +230,7 @@ router.get('/api/export-csv', adminAuth, async (req, res) => {
 });
 
 // 6. DYNAMICALLY UPDATE QR CODE TARGET/RULES
-router.put('/update/:codeId', adminAuth, async (req, res) => {
+router.put('/qrcodes/:codeId', adminAuth, async (req, res) => {
   try {
     const { destinationUrl, maxScanThreshold, allowedCountries } = req.body;
 
@@ -309,7 +259,7 @@ router.put('/update/:codeId', adminAuth, async (req, res) => {
 });
 
 // 7. DELETE QR CODE
-router.delete('/delete/:codeId', adminAuth, async (req, res) => {
+router.delete('/qrcodes/:codeId', adminAuth, async (req, res) => {
   try {
     const deleted = await QrCode.findOneAndDelete({ codeId: req.params.codeId });
 
@@ -323,6 +273,10 @@ router.delete('/delete/:codeId', adminAuth, async (req, res) => {
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
+});
+
+router.use((req, res) => {
+  res.status(404).json({ error: 'Route not found' });
 });
 
 module.exports = router;

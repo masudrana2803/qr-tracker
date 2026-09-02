@@ -19,8 +19,8 @@ mongoose.connect(mongoUri)
     console.error('Make sure MongoDB is running locally or update MONGODB_URI in .env');
   });
 
-// Register Routes
-app.use('/', qrRoutes);
+// Register API routes
+app.use('/api', qrRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
