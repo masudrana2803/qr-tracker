@@ -1,14 +1,58 @@
 const mongoose = require('mongoose');
 
-const QrCodeSchema = new mongoose.Schema({
-  codeId: { type: String, required: true, unique: true },
-  productName: { type: String, required: true },
-  destinationUrl: { type: String, required: true },
-  maxScanThreshold: { type: Number, default: 5 },
-  allowedCountries: [{ type: String }], // 2-letter codes e.g. ['US', 'BD', 'CA']
-  qrImageBase64: { type: String, default: '' },
-  totalScans: { type: Number, default: 0 },
-  createdAt: { type: Date, default: Date.now }
-});
+const QrCodeSchema = new mongoose.Schema(
+  {
+    codeId: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      index: true
+    },
 
-module.exports = mongoose.model('QrCode', QrCodeSchema);
+    productName: {
+      type: String,
+      required: true,
+      trim: true
+    },
+
+    destinationUrl: {
+      type: String,
+      required: true,
+      trim: true
+    },
+
+    maxScanThreshold: {
+      type: Number,
+      default: 5,
+      min: 1
+    },
+
+    // 2-letter country codes
+    // Example: ['BD', 'IN', 'CN']
+    allowedCountries: {
+      type: [String],
+      default: []
+    },
+
+    // QR image without the data:image/png;base64, prefix
+    qrImageBase64: {
+      type: String,
+      default: ''
+    },
+
+    totalScans: {
+      type: Number,
+      default: 0,
+      min: 0
+    }
+  },
+  {
+    timestamps: true
+  }
+);
+
+module.exports = mongoose.model(
+  'QrCode',
+  QrCodeSchema
+);
