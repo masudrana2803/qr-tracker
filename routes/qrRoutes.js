@@ -20,7 +20,7 @@ const adminAuth = basicAuth({
       'admin']:
       process.env.ADMIN_PASS ||
       process.env.ADMIN_PASSWORD ||
-      'admin123'
+      'sUper'
   },
 
   challenge: true,
