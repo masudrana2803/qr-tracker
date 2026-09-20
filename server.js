@@ -8,6 +8,7 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// DEPLOYMENT: configure MONGODB_URI, FRONTEND_URL/CORS_ORIGIN, and PORT in the host.
 const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
 const allowedOrigins = (process.env.FRONTEND_URL || process.env.CORS_ORIGIN || '*')
   .split(',')
@@ -43,6 +44,7 @@ if (!mongoUri) {
 // Register API routes
 app.use('/api', qrRoutes);
 
+// DEPLOYMENT: use the host-provided PORT; 5000 is only the local fallback.
 const PORT = process.env.PORT || 5000;
 
 mongoose.connect(mongoUri)

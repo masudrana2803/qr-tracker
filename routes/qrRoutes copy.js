@@ -7,7 +7,7 @@ const basicAuth = require('express-basic-auth');
 const QrCode = require('../models/QrCode');
 const ScanLog = require('../models/ScanLog');
 
-// Initialize Basic Auth for Admin routes
+// DEPLOYMENT: set ADMIN_USER and ADMIN_PASS as private host environment variables.
 const adminAuth = basicAuth({
   users: { 
     [process.env.ADMIN_USER || process.env.ADMIN_USERNAME || 'admin']:
@@ -131,16 +131,24 @@ router.post('/qrcodes/:codeId/scan', async (req, res) => {
       return res.status(400).json({ error: 'Invalid QR destination URL configured.' });
     }
 
-    // Extract IP Address
-    let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-    if (clientIp === '::1' || clientIp === '127.0.0.1') {
-      clientIp = '8.8.8.8';
+    // Extract the real client IP. Local addresses have no public GeoIP location.
+    let clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+    if (typeof clientIp === 'string') {
+      clientIp = clientIp.split(',')[0].trim();
     }
+    if (clientIp.startsWith('::ffff:')) {
+      clientIp = clientIp.replace('::ffff:', '');
+    }
+
+    const isLocalIp = clientIp === '::1' || clientIp === '127.0.0.1' || clientIp === '';
 
     // Free GeoIP Lookup
     let country = 'UNKNOWN';
     let city = 'UNKNOWN';
     try {
+      if (isLocalIp) {
+        throw new Error('Local IP has no public GeoIP location');
+      }
       const geoResponse = await axios.get(`https://ipapi.co/${clientIp}/json/`);
       country = geoResponse.data.country_code || 'UNKNOWN';
       city = geoResponse.data.city || 'UNKNOWN';

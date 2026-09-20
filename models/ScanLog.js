@@ -31,7 +31,8 @@ const ScanLogSchema = new mongoose.Schema(
       enum: [
         'VALID',
         'THRESHOLD_EXCEEDED',
-        'GEO_MISMATCH'
+        'GEO_MISMATCH',
+        'GEO_UNAVAILABLE'
       ],
 
       default: 'VALID',

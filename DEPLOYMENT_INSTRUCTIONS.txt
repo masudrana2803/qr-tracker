@@ -1,0 +1,138 @@
+QR TRACKER FREE DEPLOYMENT GUIDE
+================================
+
+This repository contains a Node.js/Express API. The active entry point is server.js,
+and the active route file is routes/qrRoutes.js. The file named "routes/qrRoutes copy.js"
+is a backup copy and is not loaded by server.js.
+
+Recommended free setup
+----------------------
+- Backend hosting: Render Web Service (free plan)
+- Database: MongoDB Atlas free cluster
+- Source: GitHub repository containing this QR project
+
+Important limitation
+--------------------
+A free Render service may sleep when unused. The first request after inactivity can be
+slow. This is normal for a free service.
+
+1. Prepare the project
+----------------------
+1. Confirm package.json contains:
+   - start command: node server.js
+2. Confirm .gitignore contains .env. It already does.
+3. Do not commit .env. It contains private database credentials.
+4. Commit and push these files to GitHub:
+   - package.json
+   - package-lock.json
+   - server.js
+   - routes/qrRoutes.js
+   - models/
+   - .env.example
+5. Do not push the real .env file.
+
+2. Create a free MongoDB Atlas database
+---------------------------------------
+1. Open https://www.mongodb.com/atlas/database and create a free account.
+2. Create a free shared cluster.
+3. In Database Access, create a database user and a strong password.
+4. In Network Access, add the IP address 0.0.0.0/0 so Render can connect.
+   This allows connections from any IP, so use a strong database password.
+5. Select Connect, Drivers, Node.js, and copy the MongoDB connection string.
+6. Replace the placeholders in the connection string:
+   - YOUR_USER
+   - YOUR_PASSWORD
+   - YOUR_DATABASE_NAME
+7. Keep the completed connection string private.
+
+3. Create the Render web service
+--------------------------------
+1. Open https://render.com/ and create an account.
+2. Select New, then Web Service.
+3. Connect the GitHub repository.
+4. If the repository contains this project in a subfolder, set Root Directory to:
+   DuplicateChecker/QR
+   If this repository itself is the QR project, leave Root Directory blank.
+5. Use these settings:
+   Name: qr-tracker-api (or another available name)
+   Runtime: Node
+   Build Command: npm install
+   Start Command: npm start
+   Instance Type: Free
+6. Create the service, but first add the environment variables below in the
+   Environment section.
+
+4. Add Render environment variables
+------------------------------------
+Add these as Render Environment Variables. Do not put real values in GitHub.
+
+MONGODB_URI
+Value: the completed MongoDB Atlas connection string
+
+ADMIN_USER
+Value: a new private administrator username
+
+ADMIN_PASS
+Value: a long, strong administrator password
+
+BASE_URL
+Value: https://YOUR-RENDER-SERVICE.onrender.com
+Replace YOUR-RENDER-SERVICE with the actual Render service name.
+
+PORT
+Do not set this unless Render requires it. server.js already uses Render's
+PORT automatically and falls back to 5000 only for local development.
+
+CORS_ORIGIN
+Only add this when a separate frontend calls this API.
+Value: the exact public frontend URL, for example:
+https://your-frontend.example.com
+For multiple frontend URLs, separate them with commas.
+
+5. Deploy and verify
+---------------------
+1. Click Deploy/Manual Deploy in Render.
+2. Wait for the build and service to become Live.
+3. Open this URL in a browser:
+   https://YOUR-RENDER-SERVICE.onrender.com/health
+4. Expected response includes:
+   {"status":"ok","database":"connected"}
+5. Open the API information endpoint:
+   https://YOUR-RENDER-SERVICE.onrender.com/api
+6. Test protected endpoints with Basic Authentication using the ADMIN_USER and
+   ADMIN_PASS values from Render.
+
+6. Update QR code URL generation
+--------------------------------
+BASE_URL is used when new QR codes are created. It must be the public API URL,
+not localhost and not the frontend URL. After deployment, create a new QR code or
+update existing records if they still contain localhost URLs.
+
+7. Security checklist
+---------------------
+- Rotate the MongoDB password because a real credential was previously present in
+  .env.example.
+- Rotate the admin password before production use.
+- Keep .env ignored and private.
+- Keep .env.example limited to placeholders.
+- Do not use the fallback admin credentials from the source code in production.
+- In MongoDB Atlas, restrict Network Access further when your hosting setup allows it.
+
+Deployment markers added in the project
+---------------------------------------
+- server.js: MONGODB_URI/CORS settings and host-provided PORT
+- routes/qrRoutes.js: ADMIN_USER and ADMIN_PASS for the active routes
+- routes/qrRoutes copy.js: ADMIN_USER and ADMIN_PASS in the backup route copy
+- .env.example: safe placeholders for deployment variables
+
+Local test before pushing
+-------------------------
+1. Copy .env.example to .env.
+2. Put your local or Atlas MongoDB connection string in .env.
+3. Set a local ADMIN_USER and ADMIN_PASS.
+4. Run: npm install
+5. Run: npm start
+6. Open: http://localhost:5000/health
+
+The current code has no automated test script in package.json. The basic health and
+API endpoint checks above are the deployment smoke tests.

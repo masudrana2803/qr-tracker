@@ -13,6 +13,7 @@ const ScanLog = require('../models/ScanLog');
 // ADMIN BASIC AUTH
 // =====================================================
 
+// DEPLOYMENT: set ADMIN_USER and ADMIN_PASS as private host environment variables.
 const adminAuth = basicAuth({
   users: {
     [process.env.ADMIN_USER ||
@@ -186,6 +187,32 @@ const getClientIp = (req) => {
   }
 
   return clientIp;
+};
+
+const lookupGeoLocation = async (clientIp) => {
+  try {
+    const response = await axios.get(`https://ipapi.co/${clientIp}/json/`, { timeout: 5000 });
+    const country = response.data.country_code?.toUpperCase();
+
+    if (country) {
+      return { country, city: response.data.city || 'UNKNOWN' };
+    }
+  } catch (error) {
+    console.error('Primary GeoIP lookup error:', error.message);
+  }
+
+  try {
+    const response = await axios.get(`https://ipwho.is/${clientIp}`, { timeout: 5000 });
+    const country = response.data.country_code?.toUpperCase();
+
+    if (response.data.success !== false && country) {
+      return { country, city: response.data.city || 'UNKNOWN' };
+    }
+  } catch (error) {
+    console.error('Fallback GeoIP lookup error:', error.message);
+  }
+
+  return { country: 'UNKNOWN', city: 'UNKNOWN' };
 };
 
 
@@ -691,7 +718,7 @@ router.get(
         getClientIp(req);
 
 
-      // Local development fallback
+      // Local development has no public client IP; never substitute a public DNS IP.
       if (
 
         clientIp === '::1' ||
@@ -702,8 +729,7 @@ router.get(
 
       ) {
 
-        clientIp =
-          '8.8.8.8';
+        clientIp = 'UNKNOWN';
 
       }
 
@@ -712,51 +738,9 @@ router.get(
       // GEO LOCATION
       // ---------------------------------------------
 
-      let country =
-        'UNKNOWN';
-
-      let city =
-        'UNKNOWN';
-
-
-      try {
-
-        const geoResponse =
-          await axios.get(
-
-            `https://ipapi.co/${clientIp}/json/`,
-
-            {
-              timeout: 5000
-            }
-
-          );
-
-
-        country =
-          (
-            geoResponse.data.country_code ||
-            'UNKNOWN'
-          )
-            .toUpperCase();
-
-
-        city =
-          geoResponse.data.city ||
-          'UNKNOWN';
-
-
-      } catch (error) {
-
-        console.error(
-
-          'GeoIP lookup error:',
-
-          error.message
-
-        );
-
-      }
+      const { country, city } = clientIp === 'UNKNOWN'
+        ? { country: 'UNKNOWN', city: 'UNKNOWN' }
+        : await lookupGeoLocation(clientIp);
 
 
       // ---------------------------------------------
@@ -824,6 +808,25 @@ router.get(
 
           );
 
+      }
+
+      if (country === 'UNKNOWN') {
+        await ScanLog.create({
+          qrCodeId: qrRecord.codeId,
+          ipAddress: clientIp,
+          country,
+          city,
+          status: 'GEO_UNAVAILABLE'
+        });
+
+        return res
+          .status(503)
+          .send(
+            warningPage(
+              'Location Verification Unavailable',
+              'We could not determine your current region. Please try again or contact the manufacturer.'
+            )
+          );
       }
 
 
