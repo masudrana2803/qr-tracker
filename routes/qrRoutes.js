@@ -27,7 +27,7 @@ const adminAuth = basicAuth({
   challenge: true,
 
   unauthorizedResponse: () => ({
-    error: 'Wrong credentials. Access denied.'
+    error: 'Wrong credentials. Access is denied.'
   })
 });
 
