@@ -18,7 +18,7 @@ const adminAuth = basicAuth({
   users: {
     [process.env.ADMIN_USER ||
       process.env.ADMIN_USERNAME ||
-      'admin']:
+      'ranamasu']:
       process.env.ADMIN_PASS ||
       process.env.ADMIN_PASSWORD ||
       'sUper'
@@ -27,7 +27,7 @@ const adminAuth = basicAuth({
   challenge: true,
 
   unauthorizedResponse: () => ({
-    error: 'Unauthorized'
+    error: 'Wrong credentials. Access denied.'
   })
 });
 
